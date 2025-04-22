@@ -29,7 +29,7 @@ func Parse(msg string) ([]string, error) {
 		switch parts[i][0] {
 		case '$':
 			if parts[i][1:] == "-1" {
-				// ans = append(ans, nil)
+				ans = append(ans, "")
 				continue
 			}
 			if i+1 >= len(parts) {

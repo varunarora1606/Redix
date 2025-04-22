@@ -10,6 +10,7 @@ type Store interface {
 	Set(key, val string, ttl int64)
 	Get(key string) (string, bool)
 	Keys(key string) []string
+	FlushAll()
 	SnapShot() SnapShot
 }
 
@@ -81,4 +82,12 @@ func (m *memory) Keys(key string) []string {
 	}
 
 	return keys
+}
+
+func (m *memory) FlushAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.data = make(map[string]string)
+	m.expiry = make(map[string]int64)
 }

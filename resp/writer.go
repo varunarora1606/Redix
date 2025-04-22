@@ -19,6 +19,7 @@ func WriteSimpleError(conn net.Conn, errMsg string) {
 func WriteBulkString(conn net.Conn, str string) {
 	if str == "" {
 		conn.Write([]byte("$" + strconv.Itoa(-1) + "\r\n"))
+		return
 	}
 	conn.Write([]byte("$" + strconv.Itoa(len(str)) + "\r\n" + str + "\r\n"))
 }
