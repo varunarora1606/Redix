@@ -14,6 +14,10 @@ func WriteSimpleString(conn net.Conn, res string) {
 	conn.Write([]byte("+" + res + "\r\n"))
 }
 
+func WriteSimpleInt(conn net.Conn, res int) {
+	conn.Write([]byte(fmt.Sprintf(":%d\r\n", res)))
+}
+
 func WriteSimpleError(conn net.Conn, errMsg string) {
 	conn.Write([]byte("-" + errMsg + "\r\n"))
 }

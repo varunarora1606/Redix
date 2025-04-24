@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/varunarora1606/My-Redis/rdb"
 	"github.com/varunarora1606/My-Redis/resp"
@@ -16,7 +17,7 @@ import (
 
 var role string;
 var master_replid string;
-var master_repl_offset string;
+var master_repl_offset int;
 var connected_slaves = make(map[net.Conn]int);
 var master_host string;
 var master_port string;
@@ -37,7 +38,7 @@ func main() {
 
 	role = "master"
 	master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
-	master_repl_offset = "0"
+	master_repl_offset = 0
 
 	fmt.Println("Listening on :" + *port)
 
@@ -75,8 +76,22 @@ func main() {
 }
 
 func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string) {
-	defer conn.Close()
-	defer fmt.Println("connection closed: " + connRole)
+	defer func ()  {
+		conn.Close()
+		if currentMasterConn != nil {
+			defer currentMasterConn.Close()
+		}
+		fmt.Println("connection closed: " + connRole)
+	}()
+
+	if connRole == "master" {
+		go func ()  {
+			for {
+				resp.WriteArray(conn, []string{"REPLCONF", "ACK", strconv.Itoa(master_repl_offset)})
+				time.Sleep(1 * time.Second)
+			}
+		}()
+	}
 
 	for {
 	buf := make([]byte, 512)
@@ -85,11 +100,15 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 		fmt.Println("Connection error:", err)
 		return
 	}
-	fmt.Println(string(buf[:n]))
+	buf = buf[:n]
+	fmt.Println(string(buf))
 
-	msg, err := resp.Parse(string(buf[:n]))
+	msg, err := resp.Parse(string(buf))
 	if err != nil {
-		conn.Write([]byte("-" + err.Error() + "\r\n"))
+		// if connRole == "master" {
+		// 	continue
+		// }
+		resp.WriteSimpleError(conn, err.Error())
 		continue
 	}
 
@@ -97,6 +116,9 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 
 	switch msg[0] {
 	case "PING":
+		if _, ok := connected_slaves[conn]; ok {
+			continue
+		}
 		resp.WriteSimpleString(conn, "PONG")
 	case "ECHO":
 		if len(msg) < 2 {
@@ -131,6 +153,7 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 				resp.WriteArray(connected_slave, msg)
 			}
 		}
+		master_repl_offset += len(buf)
 		if connRole == "master" {
 			continue
 		}
@@ -171,7 +194,7 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 			resp.WriteSimpleError(conn, "ERR it should be `INFO replication`")
 			continue
 		}
-		res := fmt.Sprintf("# Replication\r\nrole:%s\r\nconnected_slaves:%d\r\nmaster_replid:%s\r\nmaster_repl_offset:%s\r\n", role, len(connected_slaves), master_replid, master_repl_offset)
+		res := fmt.Sprintf("# Replication\r\nrole:%s\r\nconnected_slaves:%d\r\nmaster_replid:%s\r\nmaster_repl_offset:%d\r\n", role, len(connected_slaves), master_replid, master_repl_offset)
 		resp.WriteBulkString(conn, res)
 	case "REPLICAOF":
 		if len(msg) < 3 {
@@ -181,12 +204,12 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 		if msg[1] == "NO" && msg[2] == "ONE" {
 			role = "master"
 			master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
-			master_repl_offset = "0"
+			currentMasterConn = nil
 			continue
 		} else {
 			role = "slave"
 			master_replid = "?"
-			master_repl_offset = "-1"
+			master_repl_offset = -1
 			master_host = msg[1]
 			master_port = msg[2]
 			if _, err := strconv.Atoi(msg[2]); err != nil {
@@ -220,13 +243,82 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 			resp.WriteSimpleError(conn, "ERR wrong number of arguments for 'REPLCONF' command")
 			continue
 		}
-		if msg[1] == "listening-port" {
+		switch msg[1] {
+		case "listening-port":
 			resp.WriteSimpleString(conn, "OK")
-		} else if msg[1] == "capa" {
+		case "capa":
 			resp.WriteSimpleString(conn, "OK")
-		} else {
-			resp.WriteSimpleError(conn, fmt.Sprintf("ERR Unrecognized REPLCONF option: %s", msg[2]))
+		case "GETACK":
+			if connRole != "master" {
+				resp.WriteSimpleError(conn, "ERR unknown command")
+				continue
+			}
+			if len(msg) != 3 || msg[2] != "*" {
+				// resp.WriteSimpleError(conn, "ERR wrong arguments for 'REPLCONF GETACK' command")
+				continue
+			}
+			resp.WriteArray(conn, []string{"REPLCONF", "ACK", strconv.Itoa(master_repl_offset)})
+		case "ACK":
+			if connRole == "master" {
+				offSet, err := strconv.Atoi(msg[2])
+				if err != nil {
+					continue
+				}
+				master_repl_offset = offSet
+			}
+			if _, ok := connected_slaves[conn]; !ok {
+				resp.WriteSimpleError(conn, "ERR Unrecognized ACK")
+				continue
+			}
+			offSet, err := strconv.Atoi(msg[2])
+			if err != nil {
+				connected_slaves[conn] = 0
+				continue
+			}
+			connected_slaves[conn] = offSet
+		default:
+			resp.WriteSimpleError(conn, fmt.Sprintf("ERR Unrecognized REPLCONF option: %s", msg[1]))
 		}
+	case "WAIT":
+			if len(msg) < 3 {
+				resp.WriteSimpleError(conn, "ERR wrong number of arguments for 'WAIT' command")
+				return
+			}
+	
+			numReplica, err := strconv.Atoi(msg[1])
+			if err != nil {
+				resp.WriteSimpleError(conn, "ERR no. of ack should be in int")
+				return
+			}
+			timer, err := strconv.Atoi(msg[2])
+			if err != nil {
+				resp.WriteSimpleError(conn, "ERR time should be in int")
+				return
+			} 
+			var count int;
+			start := time.Now()
+			for connected_slave, _ := range connected_slaves {
+				resp.WriteArray(connected_slave, []string{"REPLCONF", "GETACK", "*"})
+			}
+			for {
+				count = 0
+				for _, slaveOffset := range connected_slaves {
+					if count >= numReplica {
+						break
+					}
+					if slaveOffset >= master_repl_offset {
+						count++;
+					}
+					fmt.Println(slaveOffset, master_repl_offset)
+				}
+	
+				if count >= numReplica || time.Since(start) >= time.Millisecond * time.Duration(timer) {
+					break
+				}
+	
+				time.Sleep(10 * time.Millisecond) 
+			}
+			resp.WriteSimpleInt(conn, count) 
 	case "PSYNC":
 		if len(msg) < 3 {
 			resp.WriteSimpleError(conn, "ERR wrong number of arguments for 'PSYNC' command")
@@ -237,7 +329,7 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 			continue
 		}
 		if msg[1] == "?" && msg[2] == "-1" {
-			resp.WriteSimpleString(conn, fmt.Sprintf("FULLRESYNC %s %s", master_replid, master_repl_offset))
+			resp.WriteSimpleString(conn, fmt.Sprintf("FULLRESYNC %s %d", master_replid, master_repl_offset))
 			rdb.SaveRDB(filepath, kv)
 			err := sendRdbFile(conn, filepath)
 			if err != nil {
@@ -253,6 +345,7 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 			continue
 		}
 		resp.WriteSimpleError(conn, "ERR unknown command")
+		continue
 	}
 	}
 
@@ -307,18 +400,22 @@ func doHandshake(conn net.Conn, kv store.Store) error {
 	fmt.Println("2nd handshake completed")
 
     // PSYNC
-    resp.WriteArray(conn, []string{"PSYNC", master_replid, master_repl_offset})
+    resp.WriteArray(conn, []string{"PSYNC", master_replid, strconv.Itoa(master_repl_offset)})
 	reader := bufio.NewReader(conn)
     fullresync, err := reader.ReadString('\n')
     if err != nil {
 		fmt.Println("handshake error")
         return fmt.Errorf("invalid FULLRESYNC: %v", err)
     }
-	fmt.Println("3rd handshake completed")
     fmt.Println("FULLRESYNC response:", fullresync)
 	fullresyncArr := strings.Split(fullresync, " ")
 	master_replid = fullresyncArr[1]
-	master_repl_offset = fullresyncArr[2]
+	offset, err := strconv.Atoi(strings.Trim(fullresyncArr[2], "\r\n"))
+	if err != nil {
+		return fmt.Errorf("invalid offset error: %s", err)
+	}
+	master_repl_offset = offset
+	fmt.Println("3rd handshake completed")
 
 
     rdbSize, _ := reader.ReadString('\n')
