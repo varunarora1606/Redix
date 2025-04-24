@@ -27,6 +27,7 @@ func Parse(msg string) ([]string, error) {
 		}
 
 		switch parts[i][0] {
+		case '*':
 		case '$':
 			if parts[i][1:] == "-1" {
 				ans = append(ans, "")

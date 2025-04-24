@@ -17,7 +17,7 @@ import (
 var role string;
 var master_replid string;
 var master_repl_offset string;
-var connected_slaves []net.Conn;
+var connected_slaves = make(map[net.Conn]int);
 var master_host string;
 var master_port string;
 var port *string;
@@ -127,7 +127,7 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 		}
 		kv.Set(msg[1], msg[2], int64(ttl))
 		if role == "master" {
-			for _, connected_slave := range connected_slaves {
+			for connected_slave, _ := range connected_slaves {
 				resp.WriteArray(connected_slave, msg)
 			}
 		}
@@ -246,7 +246,8 @@ func handleConn(conn net.Conn, kv store.Store, filepath string, connRole string)
 			}
 		}
 		fmt.Println("HandShake Completed")
-		connected_slaves = append(connected_slaves, conn)
+		connected_slaves[conn] = 0
+		defer delete(connected_slaves, conn)
 	default:
 		if connRole == "master" {
 			continue
@@ -327,6 +328,3 @@ func doHandshake(conn net.Conn, kv store.Store) error {
 	}
     return nil
 }
-
-// TODO: Add the saving of rdb into in memory store.
-// TODO: In loadfile if file do not exist then create file.

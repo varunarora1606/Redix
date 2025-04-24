@@ -8,6 +8,8 @@ import (
 	"strconv"
 )
 
+// TODO: if slave then no write
+
 func WriteSimpleString(conn net.Conn, res string) {
 	conn.Write([]byte("+" + res + "\r\n"))
 }
