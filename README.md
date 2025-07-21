@@ -1,6 +1,6 @@
-# 🔴 My-Redis – A Redis Clone in Go
+# 🔴 Redix – A Distributed In-Memory DataStore like Redis in Go
 
-A fully functional Redis clone written in Go, supporting core Redis commands, RESP protocol, RDB persistence, and master-slave replication. This project was built from scratch to deeply understand how Redis works under the hood.
+Redix is a distributed, in-memory key-value data store written from scratch in Go. It replicates the core functionality of Redis, including command parsing, RDB persistence, TCP networking, and master-slave replication — designed for high performance, concurrency, and a deeper understanding of distributed systems.
 
 ---
 
@@ -20,7 +20,7 @@ A fully functional Redis clone written in Go, supporting core Redis commands, RE
 ## 📁 Directory Structure
 
 ```
-My-Redis/
+Redix/
 ├── main.go              # Entry point of the Redis server
 ├── resp/                # RESP protocol parser and encoder
 ├── rdb/                 # RDB file handling (load/save/stream)
@@ -40,15 +40,15 @@ My-Redis/
 ### Build
 
 ```bash
-git clone https://github.com/varunarora1606/My-Redis.git
-cd My-Redis
-go build -o myredis
+git clone https://github.com/varunarora1606/Redix.git
+cd Redix
+go build -o redix
 ```
 
 ### Run
 
 ```bash
-./myredis --dir=./testdata --filename=dump.rdb --port=8000
+./redix --dir=./testdata --filename=dump.rdb --port=8000
 ```
 
 ---
@@ -143,13 +143,13 @@ WAIT 1 1000
 Run master on port `8000`:
 
 ```bash
-./myredis --port=8000
+./redix --port=8000
 ```
 
 Run slave on port `8001`:
 
 ```bash
-./myredis --port=8001
+./redix --port=8001
 ```
 
 Connect to the slave:

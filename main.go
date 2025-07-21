@@ -56,7 +56,6 @@ func main() {
 	fmt.Println("Data loaded successfully from " + filepath)
 
 	for {
-		fmt.Println("hello")
 		conn, err := ln.Accept()
 		if err != nil {
 			fmt.Println("Connection error:", err)
