@@ -176,7 +176,7 @@ GET hello
 
 ---
 
-## 📈 Roadmap
+<!-- ## 📈 Roadmap
 
 - [ ] Add AOF persistence
 - [ ] Support more data types (`list`, `set`, etc.)
@@ -184,7 +184,7 @@ GET hello
 - [ ] Add Pub/Sub functionality
 - [ ] Redis Cluster support
 
----
+--- -->
 
 ## 👨‍💻 Author
 
